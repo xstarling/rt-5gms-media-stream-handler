@@ -45,7 +45,7 @@ class ExoPlayerAdapter() {
     ) {
         mediaSessionHandlerAdapter = msh
         /**
-         * 使用官方的CMCD请求改动太大了
+         * 使用官方的CMCD请求改动太大了，考虑到咱们当前gradle是7.4的，升级为8.0+有风险，故放弃此修改，采用拦截器处理
 
         /** 添加cmcd请求f**/
 
@@ -72,25 +72,23 @@ class ExoPlayerAdapter() {
         /** 添加cmcd请求结束 **/
         */
 
-        // 1. 在拦截器外部生成【唯一的 Session ID】
+        // 在拦截器外部生成唯一的 Session ID
         // 保证在当前这个 Player 的生命周期内，sid 是恒定不变的
         val currentSessionId = UUID.randomUUID().toString()
 
-        // 2. 定义动态拦截器
+        // 自定义动态拦截器
         val cmcdInterceptor = Interceptor { chain ->
-            val originalRequest = chain.request()
+            val originalRequest = chain.request()  // 获取请求对象
             val originalUrl = originalRequest.url
             val urlString = originalUrl.toString()
 
             // 核心过滤：只拦截流媒体切片和清单文件
             if (urlString.endsWith(".m4s") || urlString.endsWith(".mpd") || urlString.endsWith(".mp4")) {
 
-                // 【动态提取 CID】：优雅地获取 URL 的最后一部分 (比如 "00001.m4s" 或 "video.mpd")
-                // 如果你需要去掉后缀，可以用 .substringBeforeLast(".")
+                // 动态提取 cid：获取 URL 的最后一部分的视频名作为cid
                 val dynamicCid = originalUrl.pathSegments.last()
 
-                // 【动态拼接 CMCD 字符串】
-                // 注意 CMCD 规范：字符串类型的值必须用双引号包围！
+                // 动态拼接 CMCD 字符串
                 val cmcdString = "cid=\"$dynamicCid\",sid=\"$currentSessionId\",st=v,sf=d"
 
                 // 将拼接好的字符串塞入 URL 参数
@@ -98,6 +96,7 @@ class ExoPlayerAdapter() {
                     .addQueryParameter("CMCD", cmcdString)
                     .build()
 
+                // 添加打印日志方便排查
                 Log.d(TAG, "initialize-request-CMCD-handler: " + newUrl.toString());
                 // 用新的 URL 发起请求
                 val newRequest = originalRequest.newBuilder().url(newUrl).build()
@@ -108,19 +107,18 @@ class ExoPlayerAdapter() {
             return@Interceptor chain.proceed(originalRequest)
         }
 
-        // 2. 把拦截器装进自定义的 OkHttpClient
+        // 把拦截器装进OkHttpClient对象中
         val okHttpClient = OkHttpClient.Builder()
             .addInterceptor(cmcdInterceptor)
             .build()
 
-        // 3. 告诉 ExoPlayer：别用你自带的底层网络库了，用我这个加了料的 OkHttp！
+        // 封装 ExoPlayer的请求到数据源对象，修改为当前的添加了自定义拦截器的请求对象
         val dataSourceFactory = OkHttpDataSource.Factory(okHttpClient)
         val mediaSourceFactory = DefaultMediaSourceFactory(context)
             .setDataSourceFactory(dataSourceFactory)
 
         playerInstance = ExoPlayer.Builder(context)
-            .setMediaSourceFactory(mediaSourceFactory)
-
+            .setMediaSourceFactory(mediaSourceFactory)  // 绑定数据源请求对象到ExoPlayer中
             .build()
         bandwidthMeter = DefaultBandwidthMeter.Builder(context).build()
         playerView = exoPlayerView
