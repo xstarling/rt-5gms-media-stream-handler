@@ -10,7 +10,7 @@ android {
 
     defaultConfig {
         minSdk 29
-        targetSdk 32
+        targetSdk 33
         versionCode 1
         versionName "1.0.0"
 
@@ -61,8 +61,30 @@ dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.4.1'
     implementation 'androidx.core:core-ktx:1.7.0'
     implementation 'androidx.appcompat:appcompat:1.5.1'
-    implementation 'com.fivegmag:a5gmscommonlibrary:1.0.0'
+    implementation 'com.fivegmag:a5gmscommonlibrary:1.0.1'
+
+
+    // 拦截器
+    implementation 'com.google.android.exoplayer:extension-okhttp:2.18.2'
+    // implementation platform('com.squareup.okhttp3:okhttp-bom:4.10.0')
+
+
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.4'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.0'
 }
+
+//configurations.all {
+//    resolutionStrategy {
+//        // OkHttp 和 Okio 保持不变
+//        force("com.squareup.okhttp3:okhttp:4.10.0")
+//        force("com.squareup.okhttp3:logging-interceptor:4.10.0")
+//        force("com.squareup.okio:okio:3.2.0")
+//
+//        // 🚨 核心修复：Kotlin 的包名版本号必须带上最后的 0
+//        force("org.jetbrains.kotlin:kotlin-stdlib:1.7.10")
+//        force("org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.7.10")
+//        force("org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.7.10")
+//        force("org.jetbrains.kotlin:kotlin-stdlib-common:1.7.10")
+//    }
+//}

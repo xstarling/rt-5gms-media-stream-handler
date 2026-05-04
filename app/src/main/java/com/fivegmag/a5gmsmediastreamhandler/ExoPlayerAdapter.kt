@@ -8,8 +8,8 @@ https://drive.google.com/file/d/1cinCiA778IErENZ3JN52VFW-1ffHpx7Z/view
 */
 
 package com.fivegmag.a5gmsmediastreamhandler
-
 import android.content.Context
+import android.util.Log
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.MediaItem
 import com.google.android.exoplayer2.ui.StyledPlayerView
@@ -19,7 +19,15 @@ import com.google.android.exoplayer2.Player
 import com.fivegmag.a5gmscommonlibrary.helpers.PlayerStates
 import com.fivegmag.a5gmscommonlibrary.helpers.StatusInformation
 import com.fivegmag.a5gmsmediastreamhandler.helpers.mapStateToConstant
+import com.google.android.exoplayer2.ExoPlayerLibraryInfo.TAG
 
+
+// 顶部的 import 需要加上这些：
+import okhttp3.OkHttpClient
+import okhttp3.Interceptor
+import com.google.android.exoplayer2.ext.okhttp.OkHttpDataSource
+import com.google.android.exoplayer2.source.DefaultMediaSourceFactory
+import java.util.UUID
 
 class ExoPlayerAdapter() {
 
@@ -36,7 +44,84 @@ class ExoPlayerAdapter() {
         msh: MediaSessionHandlerAdapter
     ) {
         mediaSessionHandlerAdapter = msh
-        playerInstance = ExoPlayer.Builder(context).build()
+        /**
+         * 使用官方的CMCD请求改动太大了
+
+        /** 添加cmcd请求f**/
+
+        // 1. 创建 Media3 专属的 CMCD 配置工厂
+        val cmcdConfigurationFactory = CmcdConfiguration.Factory { mediaItem ->
+            CmcdConfiguration.Builder(UUID.randomUUID().toString()) // 随机生成 Session ID
+                // 🚨 核心魔法：强制使用 Query 模式！这样 Nginx 才能抓到 ?CMCD=...
+                .setTransmissionMode(CmcdConfiguration.MODE_QUERY_PARAMETER)
+
+                // 可选：允许上报所有标准的 CMCD 字段
+                .setRequestConfig(object : CmcdConfiguration.RequestConfig {
+                    override fun isKeyAllowed(key: String): Boolean {
+                        return true
+                    }
+                })
+                .build()
+        }
+
+        // 2. 将 CMCD 配置绑定到 Media3 的工厂上
+        val mediaSourceFactory = DefaultMediaSourceFactory(context)
+            .setCmcdConfigurationFactory(cmcdConfigurationFactory)
+
+
+        /** 添加cmcd请求结束 **/
+        */
+
+        // 1. 在拦截器外部生成【唯一的 Session ID】
+        // 保证在当前这个 Player 的生命周期内，sid 是恒定不变的
+        val currentSessionId = UUID.randomUUID().toString()
+
+        // 2. 定义动态拦截器
+        val cmcdInterceptor = Interceptor { chain ->
+            val originalRequest = chain.request()
+            val originalUrl = originalRequest.url
+            val urlString = originalUrl.toString()
+
+            // 核心过滤：只拦截流媒体切片和清单文件
+            if (urlString.endsWith(".m4s") || urlString.endsWith(".mpd") || urlString.endsWith(".mp4")) {
+
+                // 【动态提取 CID】：优雅地获取 URL 的最后一部分 (比如 "00001.m4s" 或 "video.mpd")
+                // 如果你需要去掉后缀，可以用 .substringBeforeLast(".")
+                val dynamicCid = originalUrl.pathSegments.last()
+
+                // 【动态拼接 CMCD 字符串】
+                // 注意 CMCD 规范：字符串类型的值必须用双引号包围！
+                val cmcdString = "cid=\"$dynamicCid\",sid=\"$currentSessionId\",st=v,sf=d"
+
+                // 将拼接好的字符串塞入 URL 参数
+                val newUrl = originalUrl.newBuilder()
+                    .addQueryParameter("CMCD", cmcdString)
+                    .build()
+
+                Log.d(TAG, "initialize-request-CMCD-handler: " + newUrl.toString());
+                // 用新的 URL 发起请求
+                val newRequest = originalRequest.newBuilder().url(newUrl).build()
+                return@Interceptor chain.proceed(newRequest)
+            }
+
+            // 普通请求直接放行
+            return@Interceptor chain.proceed(originalRequest)
+        }
+
+        // 2. 把拦截器装进自定义的 OkHttpClient
+        val okHttpClient = OkHttpClient.Builder()
+            .addInterceptor(cmcdInterceptor)
+            .build()
+
+        // 3. 告诉 ExoPlayer：别用你自带的底层网络库了，用我这个加了料的 OkHttp！
+        val dataSourceFactory = OkHttpDataSource.Factory(okHttpClient)
+        val mediaSourceFactory = DefaultMediaSourceFactory(context)
+            .setDataSourceFactory(dataSourceFactory)
+
+        playerInstance = ExoPlayer.Builder(context)
+            .setMediaSourceFactory(mediaSourceFactory)
+
+            .build()
         bandwidthMeter = DefaultBandwidthMeter.Builder(context).build()
         playerView = exoPlayerView
         playerView.player = playerInstance
